@@ -175,22 +175,74 @@ class FFmpegBackend(BaseRenderBackend):
         has_ffmpeg = bool(shutil.which(binary) or os.path.isfile(binary))
         return has_ffmpeg and render_ffmpeg.ffprobe_binary() is not None
 
-    def _run(self, step: str, *args, **kwargs):
+    def _run(self, step: str, arguments: dict):
         if not self._ffmpeg_available():
             logger.warning(f"ffmpeg or ffprobe not found, rendering {step} with moviepy")
-            return getattr(self._fallback, step)(*args, **kwargs)
+            return getattr(self._fallback, step)(**arguments)
         try:
-            return getattr(render_ffmpeg, step)(*args, **kwargs)
+            return getattr(render_ffmpeg, step)(**arguments)
         except render_ffmpeg.UnsupportedRenderOption as exc:
             # Raised before FFmpeg starts, so nothing has been rendered yet.
             logger.info(f"ffmpeg backend does not support {exc}, rendering {step} with moviepy")
-            return getattr(self._fallback, step)(*args, **kwargs)
+            return getattr(self._fallback, step)(**arguments)
 
-    def combine_videos(self, *args, **kwargs) -> str:
-        return self._run("combine_videos", *args, **kwargs)
+    def combine_videos(
+        self,
+        combined_video_path: str,
+        video_paths: List[str],
+        audio_file: str,
+        video_aspect: VideoAspect = VideoAspect.portrait,
+        video_concat_mode: VideoConcatMode = VideoConcatMode.random,
+        video_transition_mode: VideoTransitionMode = None,
+        max_clip_duration: int = 5,
+        threads: int = 2,
+        clip_speed: float = 1.0,
+        video_fit_mode: VideoFitMode = VideoFitMode.cover,
+        source_usage: dict[str, int] | None = None,
+        source_groups: dict[str, str] | None = None,
+        used_video_paths: List[str] | None = None,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> str:
+        return self._run(
+            "combine_videos",
+            dict(
+                combined_video_path=combined_video_path,
+                video_paths=video_paths,
+                audio_file=audio_file,
+                video_aspect=video_aspect,
+                video_concat_mode=video_concat_mode,
+                video_transition_mode=video_transition_mode,
+                max_clip_duration=max_clip_duration,
+                threads=threads,
+                clip_speed=clip_speed,
+                video_fit_mode=video_fit_mode,
+                source_usage=source_usage,
+                source_groups=source_groups,
+                used_video_paths=used_video_paths,
+                progress_callback=progress_callback,
+            ),
+        )
 
-    def generate_video(self, *args, **kwargs) -> bool:
-        return self._run("generate_video", *args, **kwargs)
+    def generate_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        subtitle_path: str,
+        output_file: str,
+        params: VideoParams,
+        bgm_file_override: str | None = None,
+    ) -> bool:
+        return self._run(
+            "generate_video",
+            dict(
+                video_path=video_path,
+                audio_path=audio_path,
+                subtitle_path=subtitle_path,
+                output_file=output_file,
+                params=params,
+                bgm_file_override=bgm_file_override,
+            ),
+        )
 
 
 _MOVIEPY_BACKEND = MoviePyBackend()
