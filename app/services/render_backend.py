@@ -120,12 +120,14 @@ class FFmpegBackend(BaseRenderBackend):
         self._fallback = fallback
 
     def _ffmpeg_available(self) -> bool:
+        # Both are needed: the bundled imageio-ffmpeg binary has no ffprobe.
         binary = utils.get_ffmpeg_binary()
-        return bool(shutil.which(binary) or os.path.isfile(binary))
+        has_ffmpeg = bool(shutil.which(binary) or os.path.isfile(binary))
+        return has_ffmpeg and render_ffmpeg.ffprobe_binary() is not None
 
     def _run(self, step: str, *args, **kwargs):
         if not self._ffmpeg_available():
-            logger.warning(f"ffmpeg not found, rendering {step} with moviepy")
+            logger.warning(f"ffmpeg or ffprobe not found, rendering {step} with moviepy")
             return getattr(self._fallback, step)(*args, **kwargs)
         try:
             return getattr(render_ffmpeg, step)(*args, **kwargs)

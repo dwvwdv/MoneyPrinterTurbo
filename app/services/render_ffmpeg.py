@@ -83,13 +83,26 @@ class UnsupportedRenderOption(Exception):
 # probing
 
 
-def _ffprobe_binary() -> str:
+def ffprobe_binary() -> str | None:
+    """Return ffprobe next to the configured FFmpeg, or on PATH, or None.
+
+    The imageio-ffmpeg fallback bundles ffmpeg without ffprobe, so a working
+    ffmpeg does not imply that ffprobe exists.
+    """
     ffmpeg_binary = utils.get_ffmpeg_binary()
     directory, name = os.path.split(ffmpeg_binary)
-    candidate = os.path.join(directory, name.replace("ffmpeg", "ffprobe"))
-    if directory and os.path.exists(candidate):
-        return candidate
-    return shutil.which("ffprobe") or "ffprobe"
+    if directory:
+        candidate = os.path.join(directory, name.replace("ffmpeg", "ffprobe"))
+        if candidate != ffmpeg_binary and os.path.isfile(candidate):
+            return candidate
+    return shutil.which("ffprobe")
+
+
+def _ffprobe_binary() -> str:
+    binary = ffprobe_binary()
+    if binary is None:
+        raise FileNotFoundError("ffprobe not found")
+    return binary
 
 
 def _probe(path: str) -> dict:

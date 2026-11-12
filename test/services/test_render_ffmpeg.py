@@ -84,6 +84,15 @@ class TestFallbackBeforeRendering(unittest.TestCase):
             self.backend.combine_videos("c.mp4", ["a.mp4"], "a.mp3")
         moviepy.assert_called_once()
 
+    def test_missing_ffprobe_renders_with_moviepy(self):
+        # imageio-ffmpeg ships ffmpeg without ffprobe.
+        with patch.object(render_ffmpeg, "ffprobe_binary", return_value=None), \
+                patch.object(render_ffmpeg, "_probe") as probe, \
+                patch.object(render_backend.video, "combine_videos", return_value="c.mp4") as moviepy:
+            self.backend.combine_videos("c.mp4", ["a.mp4"], "a.mp3")
+        moviepy.assert_called_once()
+        probe.assert_not_called()
+
     def test_failure_after_start_is_not_rerendered(self):
         with patch.object(render_ffmpeg, "combine_videos", side_effect=RuntimeError("encoder died")), \
                 patch.object(render_backend.video, "combine_videos") as moviepy:
