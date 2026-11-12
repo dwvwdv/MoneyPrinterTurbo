@@ -48,6 +48,14 @@ class TestMoviePyBackend(unittest.TestCase):
                     parameters(getattr(render_backend.MoviePyBackend, method)),
                     expected,
                 )
+                self.assertEqual(
+                    parameters(getattr(render_backend.FFmpegBackend, method)),
+                    expected,
+                )
+                self.assertEqual(
+                    parameters(getattr(render_backend.render_ffmpeg, method)),
+                    expected,
+                )
 
     def test_combine_videos_forwards_every_argument_and_the_result(self):
         backend = render_backend.MoviePyBackend()

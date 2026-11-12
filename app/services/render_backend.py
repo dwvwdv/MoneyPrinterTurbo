@@ -26,17 +26,20 @@ keeps the three signatures in sync:
   when no BGM was requested or it mixed successfully, ``False`` when BGM was
   requested but failed and a narration-only video was written instead.
 
-A backend is named after its rendering engine, not where it runs: an FFmpeg
-backend would also render on this machine, and a remote worker could run
-either engine. Only the MoviePy backend exists today, and it is always used,
-so behavior is unchanged. Discovering and selecting other backends is left to
-a later change.
+A backend is named after its rendering engine, not where it runs: the FFmpeg
+backend also renders on this machine, and a remote worker could run either
+engine. MoviePy stays the default; ``render_backend = "ffmpeg"`` under
+``[app]`` opts in to the FFmpeg backend.
 """
 
 from __future__ import annotations
 
+import os
+import shutil
 from abc import ABC, abstractmethod
 from typing import Callable, List
+
+from loguru import logger
 
 from app.models.schema import (
     VideoAspect,
@@ -45,7 +48,9 @@ from app.models.schema import (
     VideoParams,
     VideoTransitionMode,
 )
-from app.services import video
+from app.config import config
+from app.services import render_ffmpeg, video
+from app.utils import utils
 
 DEFAULT_RENDER_BACKEND = "moviepy"
 
@@ -151,9 +156,109 @@ class MoviePyBackend(BaseRenderBackend):
         )
 
 
-_DEFAULT_BACKEND = MoviePyBackend()
+class FFmpegBackend(BaseRenderBackend):
+    """Renders each step as one FFmpeg filter graph and a single encode.
+
+    Falls back to MoviePy only before a step starts rendering: when FFmpeg is
+    missing or the step uses an option this backend cannot draw. A failure
+    after FFmpeg has started is raised, so a step never renders twice.
+    """
+
+    name = "ffmpeg"
+
+    def __init__(self, fallback: BaseRenderBackend):
+        self._fallback = fallback
+
+    def _ffmpeg_available(self) -> bool:
+        # Both are needed: the bundled imageio-ffmpeg binary has no ffprobe.
+        binary = utils.get_ffmpeg_binary()
+        has_ffmpeg = bool(shutil.which(binary) or os.path.isfile(binary))
+        return has_ffmpeg and render_ffmpeg.ffprobe_binary() is not None
+
+    def _run(self, step: str, arguments: dict):
+        if not self._ffmpeg_available():
+            logger.warning(f"ffmpeg or ffprobe not found, rendering {step} with moviepy")
+            return getattr(self._fallback, step)(**arguments)
+        try:
+            return getattr(render_ffmpeg, step)(**arguments)
+        except render_ffmpeg.UnsupportedRenderOption as exc:
+            # Raised before FFmpeg starts, so nothing has been rendered yet.
+            logger.info(f"ffmpeg backend does not support {exc}, rendering {step} with moviepy")
+            return getattr(self._fallback, step)(**arguments)
+
+    def combine_videos(
+        self,
+        combined_video_path: str,
+        video_paths: List[str],
+        audio_file: str,
+        video_aspect: VideoAspect = VideoAspect.portrait,
+        video_concat_mode: VideoConcatMode = VideoConcatMode.random,
+        video_transition_mode: VideoTransitionMode = None,
+        max_clip_duration: int = 5,
+        threads: int = 2,
+        clip_speed: float = 1.0,
+        video_fit_mode: VideoFitMode = VideoFitMode.cover,
+        source_usage: dict[str, int] | None = None,
+        source_groups: dict[str, str] | None = None,
+        used_video_paths: List[str] | None = None,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> str:
+        return self._run(
+            "combine_videos",
+            dict(
+                combined_video_path=combined_video_path,
+                video_paths=video_paths,
+                audio_file=audio_file,
+                video_aspect=video_aspect,
+                video_concat_mode=video_concat_mode,
+                video_transition_mode=video_transition_mode,
+                max_clip_duration=max_clip_duration,
+                threads=threads,
+                clip_speed=clip_speed,
+                video_fit_mode=video_fit_mode,
+                source_usage=source_usage,
+                source_groups=source_groups,
+                used_video_paths=used_video_paths,
+                progress_callback=progress_callback,
+            ),
+        )
+
+    def generate_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        subtitle_path: str,
+        output_file: str,
+        params: VideoParams,
+        bgm_file_override: str | None = None,
+    ) -> bool:
+        return self._run(
+            "generate_video",
+            dict(
+                video_path=video_path,
+                audio_path=audio_path,
+                subtitle_path=subtitle_path,
+                output_file=output_file,
+                params=params,
+                bgm_file_override=bgm_file_override,
+            ),
+        )
 
 
-def get_render_backend() -> BaseRenderBackend:
-    """Return the backend that renders task videos (currently always MoviePy)."""
-    return _DEFAULT_BACKEND
+_MOVIEPY_BACKEND = MoviePyBackend()
+_BACKENDS: dict[str, BaseRenderBackend] = {
+    MoviePyBackend.name: _MOVIEPY_BACKEND,
+    FFmpegBackend.name: FFmpegBackend(fallback=_MOVIEPY_BACKEND),
+}
+
+
+def get_render_backend(name: str | None = None) -> BaseRenderBackend:
+    """Return the backend named by ``name`` or ``[app] render_backend`` (MoviePy by default)."""
+    if name is None:
+        name = config.app.get("render_backend", DEFAULT_RENDER_BACKEND)
+    key = str(name or DEFAULT_RENDER_BACKEND).strip().lower()
+    backend = _BACKENDS.get(key)
+    if backend is None:
+        logger.warning(f"unknown render backend {name!r}, using {DEFAULT_RENDER_BACKEND}")
+        return _MOVIEPY_BACKEND
+    return backend
