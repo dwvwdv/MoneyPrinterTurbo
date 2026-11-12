@@ -31,7 +31,8 @@ a later change.
 
 from __future__ import annotations
 
-from typing import Callable, List, Protocol, runtime_checkable
+from abc import ABC, abstractmethod
+from typing import Callable, List
 
 from app.models.schema import (
     VideoAspect,
@@ -45,12 +46,15 @@ from app.services import video
 DEFAULT_RENDER_BACKEND = "moviepy"
 
 
-@runtime_checkable
-class RenderBackend(Protocol):
-    """Renders the combined and final videos for one task."""
+class BaseRenderBackend(ABC):
+    """Renders the combined and final videos for one task.
+
+    Subclasses set ``name`` to their rendering engine and implement both steps.
+    """
 
     name: str
 
+    @abstractmethod
     def combine_videos(
         self,
         combined_video_path: str,
@@ -67,8 +71,10 @@ class RenderBackend(Protocol):
         source_groups: dict[str, str] | None = None,
         used_video_paths: List[str] | None = None,
         progress_callback: Callable[[float], None] | None = None,
-    ) -> str: ...
+    ) -> str:
+        """Join the material clips into ``combined_video_path`` and return it."""
 
+    @abstractmethod
     def generate_video(
         self,
         video_path: str,
@@ -77,10 +83,11 @@ class RenderBackend(Protocol):
         output_file: str,
         params: VideoParams,
         bgm_file_override: str | None = None,
-    ) -> bool: ...
+    ) -> bool:
+        """Write ``output_file`` and return whether BGM was handled."""
 
 
-class MoviePyBackend:
+class MoviePyBackend(BaseRenderBackend):
     """The existing in-process MoviePy renderer."""
 
     name = DEFAULT_RENDER_BACKEND
@@ -97,6 +104,6 @@ class MoviePyBackend:
 _DEFAULT_BACKEND = MoviePyBackend()
 
 
-def get_render_backend() -> RenderBackend:
+def get_render_backend() -> BaseRenderBackend:
     """Return the backend that renders task videos (currently always MoviePy)."""
     return _DEFAULT_BACKEND

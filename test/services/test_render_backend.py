@@ -11,12 +11,22 @@ from app.services import task as tm
 
 
 class TestMoviePyBackend(unittest.TestCase):
-    def test_default_backend_is_moviepy_and_satisfies_the_protocol(self):
+    def test_default_backend_is_moviepy(self):
         backend = render_backend.get_render_backend()
 
         self.assertIsInstance(backend, render_backend.MoviePyBackend)
-        self.assertIsInstance(backend, render_backend.RenderBackend)
+        self.assertIsInstance(backend, render_backend.BaseRenderBackend)
         self.assertEqual(backend.name, "moviepy")
+
+    def test_backend_missing_a_step_cannot_be_instantiated(self):
+        class CombineOnly(render_backend.BaseRenderBackend):
+            name = "combine-only"
+
+            def combine_videos(self, *args, **kwargs):
+                return ""
+
+        with self.assertRaises(TypeError):
+            CombineOnly()
 
     def test_combine_videos_forwards_every_argument_and_the_result(self):
         backend = render_backend.MoviePyBackend()
@@ -69,7 +79,7 @@ class TestMoviePyBackend(unittest.TestCase):
             self.assertEqual(generate.call_args.kwargs["bgm_file_override"], "bgm.mp3")
 
 
-class _RecordingBackend:
+class _RecordingBackend(render_backend.BaseRenderBackend):
     name = "recording"
 
     def __init__(self):
