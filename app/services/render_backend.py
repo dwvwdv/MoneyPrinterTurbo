@@ -10,14 +10,18 @@
 The steps stay separate on purpose: video-music providers such as Sonilo and
 ElevenLabs read ``combined-N.mp4`` between them to compose the BGM.
 
-A backend implements both steps with the same signatures and contracts as the
-functions in ``app.services.video``:
+A backend implements both steps with the same signatures (including
+defaults) and contracts as the functions in ``app.services.video``; a test
+keeps the three signatures in sync:
 
-- ``combine_videos`` calls ``progress_callback`` with a fraction in ``[0, 1]``
-  while it processes clips, and appends every material file it uses to
-  ``used_video_paths`` (the caller's list, mutated in place) so batch material
-  allocation can track reuse across videos. ``source_usage`` and
-  ``source_groups`` are read-only inputs for that allocation.
+- ``combine_videos`` calls ``progress_callback``, when given, with a fraction
+  in ``[0, 1]`` while it processes clips.
+- ``source_usage``, ``source_groups`` and ``used_video_paths`` are passed only
+  when the task allocates materials across a batch of videos, and are
+  ``None`` otherwise. When ``used_video_paths`` is given, ``combine_videos``
+  appends every material file it uses to that list (the caller's own list,
+  mutated in place) so reuse can be tracked across videos; ``source_usage``
+  and ``source_groups`` are read-only inputs for that allocation.
 - ``generate_video`` returns whether background music was handled: ``True``
   when no BGM was requested or it mixed successfully, ``False`` when BGM was
   requested but failed and a narration-only video was written instead.
@@ -99,11 +103,57 @@ class MoviePyBackend(BaseRenderBackend):
 
     # Look the functions up on the module at call time, so patches of
     # ``video.combine_videos`` / ``video.generate_video`` still apply.
-    def combine_videos(self, *args, **kwargs) -> str:
-        return video.combine_videos(*args, **kwargs)
+    def combine_videos(
+        self,
+        combined_video_path: str,
+        video_paths: List[str],
+        audio_file: str,
+        video_aspect: VideoAspect = VideoAspect.portrait,
+        video_concat_mode: VideoConcatMode = VideoConcatMode.random,
+        video_transition_mode: VideoTransitionMode = None,
+        max_clip_duration: int = 5,
+        threads: int = 2,
+        clip_speed: float = 1.0,
+        video_fit_mode: VideoFitMode = VideoFitMode.cover,
+        source_usage: dict[str, int] | None = None,
+        source_groups: dict[str, str] | None = None,
+        used_video_paths: List[str] | None = None,
+        progress_callback: Callable[[float], None] | None = None,
+    ) -> str:
+        return video.combine_videos(
+            combined_video_path=combined_video_path,
+            video_paths=video_paths,
+            audio_file=audio_file,
+            video_aspect=video_aspect,
+            video_concat_mode=video_concat_mode,
+            video_transition_mode=video_transition_mode,
+            max_clip_duration=max_clip_duration,
+            threads=threads,
+            clip_speed=clip_speed,
+            video_fit_mode=video_fit_mode,
+            source_usage=source_usage,
+            source_groups=source_groups,
+            used_video_paths=used_video_paths,
+            progress_callback=progress_callback,
+        )
 
-    def generate_video(self, *args, **kwargs) -> bool:
-        return video.generate_video(*args, **kwargs)
+    def generate_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        subtitle_path: str,
+        output_file: str,
+        params: VideoParams,
+        bgm_file_override: str | None = None,
+    ) -> bool:
+        return video.generate_video(
+            video_path=video_path,
+            audio_path=audio_path,
+            subtitle_path=subtitle_path,
+            output_file=output_file,
+            params=params,
+            bgm_file_override=bgm_file_override,
+        )
 
 
 class FFmpegBackend(BaseRenderBackend):
