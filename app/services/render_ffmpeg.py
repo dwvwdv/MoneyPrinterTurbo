@@ -588,10 +588,11 @@ def _write_subtitle_track(
     blank = os.path.join(work_dir, "blank.png")
     Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0)).save(blank)
 
-    entries: list[tuple[str, float]] = []
-    cursor = 0.0
+    cues: list[tuple[float, float, str]] = []
     for index, item in enumerate(subtitles):
         (start, end), _text = item
+        if end <= start:
+            continue
         clip = video._create_subtitle_clip(
             item, params,
             font_path=font_path, shaped_font=shaped_font,
@@ -603,14 +604,34 @@ def _write_subtitle_track(
             video.close_clip(clip)
         frame_path = os.path.join(work_dir, f"cue-{index:05d}.png")
         image.save(frame_path, compress_level=1)
-        if start > cursor:
-            entries.append((blank, start - cursor))
-        elif start < cursor:
-            # Overlapping cues: MoviePy draws both; show the later one from here.
-            start = cursor
-        if end > start:
-            entries.append((frame_path, end - start))
-            cursor = end
+        cues.append((float(start), float(end), frame_path))
+
+    # MoviePy composites every cue at its own time, later cues on top. Split
+    # the timeline wherever a cue starts or ends and show, for each span, the
+    # cues active in it, so overlapping cues stay visible.
+    boundaries = sorted({0.0, *(t for start, end, _ in cues for t in (start, end))})
+    combined: dict[tuple[str, ...], str] = {}
+    entries: list[tuple[str, float]] = []
+    for span_start, span_end in zip(boundaries, boundaries[1:]):
+        active = tuple(path for start, end, path in cues if start <= span_start < end)
+        if not active:
+            frame = blank
+        elif len(active) == 1:
+            frame = active[0]
+        else:
+            frame = combined.get(active)
+            if frame is None:
+                canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
+                for path in active:
+                    with Image.open(path) as layer:
+                        canvas.alpha_composite(layer.convert("RGBA"))
+                frame = os.path.join(work_dir, f"overlap-{len(combined):05d}.png")
+                canvas.save(frame, compress_level=1)
+                combined[active] = frame
+        if entries and entries[-1][0] == frame:
+            entries[-1] = (frame, entries[-1][1] + span_end - span_start)
+        else:
+            entries.append((frame, span_end - span_start))
     entries.append((blank, 1.0))
 
     list_path = os.path.join(work_dir, "subtitles.txt")

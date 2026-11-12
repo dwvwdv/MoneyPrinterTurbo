@@ -15,7 +15,8 @@ python scripts/render_benchmark/run_benchmark.py --assets bench-assets --minutes
 ```
 
 Settings: portrait 1080x1920, `n_threads=2`, `video_clip_concurrency=1` (defaults),
-no transition, subtitles on, random BGM, libx264.
+no transition, subtitles on, libx264. The BGM is one built-in song picked with its own
+seeded RNG, so both backends and split runs mix the same file.
 
 ## Results: 14-minute video, 4 vCPU, 15 GB RAM, FFmpeg 6.1.1
 
@@ -36,4 +37,6 @@ and progress ends at 1.0 (MoviePy: 169 callbacks, one per clip; FFmpeg: 1985, fr
 Raw reports: [`results/14min-moviepy.json`](results/14min-moviepy.json),
 [`results/14min-ffmpeg.json`](results/14min-ffmpeg.json). The MoviePy run was split into
 `--step combine` and `--step generate`, so its peak memory is the larger of the two steps.
-The FFmpeg final report shows 48 kHz audio; that build was fixed afterwards to write 44.1 kHz like MoviePy.
+The recorded runs predate two fixes: the FFmpeg final shows 48 kHz audio (it now writes
+44.1 kHz like MoviePy), and each run drew its BGM from the global RNG, so the two runs
+may have mixed different songs. Neither changes the video work being timed.

@@ -190,3 +190,23 @@ class TestRenderWithFFmpeg(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOverlappingSubtitles(unittest.TestCase):
+    def test_cue_inside_another_cue_is_kept(self):
+        # MoviePy draws both cues at their own times; the FFmpeg track must too.
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        srt = os.path.join(tmp, "s.srt")
+        with open(srt, "w", encoding="utf-8") as fp:
+            fp.write("1\n00:00:00,000 --> 00:00:05,000\nlong cue\n\n"
+                     "2\n00:00:01,000 --> 00:00:02,000\nshort cue\n")
+        params = VideoParams(video_subject="x")
+        font_path = render_ffmpeg._resolve_font_path(params)
+        list_path = render_ffmpeg._write_subtitle_track(srt, params, font_path, 360, 640, tmp)
+        with open(list_path, encoding="utf-8") as fp:
+            lines = fp.read().splitlines()
+        files = [os.path.basename(line.split("'")[1]) for line in lines if line.startswith("file ")]
+        durations = [float(line.split()[1]) for line in lines if line.startswith("duration ")]
+        self.assertEqual(files[:3], ["cue-00000.png", "overlap-00000.png", "cue-00000.png"])
+        self.assertEqual(durations[:3], [1.0, 1.0, 3.0])

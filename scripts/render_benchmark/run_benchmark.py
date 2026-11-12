@@ -33,6 +33,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from app.models.schema import VideoAspect, VideoParams  # noqa: E402
+from app.services import bgm as bgm_service  # noqa: E402
 from app.services import render_backend, video  # noqa: E402
 
 
@@ -88,12 +89,19 @@ def main(argv: list[str] | None = None) -> int:
     combined = os.path.join(run_dir, "combined-1.mp4")
     final = os.path.join(run_dir, "final-1.mp4")
 
+    # Pick the BGM with its own seeded RNG and pass it as a fixed file: the
+    # backends consume the global RNG differently while combining, and
+    # --step generate runs in a fresh process.
+    bgm_file = ""
+    if not args.no_bgm:
+        bgm_file = random.Random(args.seed).choice(sorted(bgm_service.list_bgm_files()))
     params = VideoParams(
         video_subject="render benchmark",
         video_aspect=VideoAspect(args.aspect),
         video_transition_mode=args.transition,
         subtitle_enabled=not args.no_subtitles,
-        bgm_type="" if args.no_bgm else "random",
+        bgm_type="custom" if bgm_file else "",
+        bgm_file=bgm_file,
         n_threads=args.threads,
     )
     backend = render_backend.get_render_backend(args.backend)
@@ -176,7 +184,8 @@ def main(argv: list[str] | None = None) -> int:
         "materials": len(materials),
         "params": {
             "aspect": args.aspect, "n_threads": args.threads, "transition": args.transition,
-            "subtitles": not args.no_subtitles, "bgm": not args.no_bgm,
+            "subtitles": not args.no_subtitles,
+            "bgm": os.path.basename(bgm_file) if bgm_file else None,
             "video_clip_concurrency": video._get_clip_processing_concurrency(),
         },
         "machine": {
