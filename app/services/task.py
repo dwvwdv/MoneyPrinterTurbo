@@ -30,6 +30,7 @@ from app.services import (
     metaso_minimax,
     muapi,
     ofox,
+    render_backend,
     sonilo,
     subtitle,
     task_artifacts,
@@ -1046,6 +1047,7 @@ def generate_final_videos(
     else:
         video_concat_mode = VideoConcatMode.random
     video_transition_mode = params.video_transition_mode
+    renderer = render_backend.get_render_backend()
 
     _progress = 50
     for i in range(params.video_count):
@@ -1068,7 +1070,7 @@ def generate_final_videos(
         # 每条视频占 50% 进度中的一份，合成与最终编码各占一半。片段处理是
         # 合成里最耗时的部分，逐段推进这一半的进度。
         combine_share = 50 / params.video_count / 2
-        video.combine_videos(
+        renderer.combine_videos(
             combined_video_path=combined_video_path,
             video_paths=downloaded_videos,
             audio_file=audio_file,
@@ -1141,7 +1143,7 @@ def generate_final_videos(
                 warnings.append({"code": warning_code, "video_index": index})
 
         logger.info(f"\n\n## generating video: {index} => {final_video_path}")
-        bgm_mix_succeeded = video.generate_video(
+        bgm_mix_succeeded = renderer.generate_video(
             video_path=combined_video_path,
             audio_path=audio_file,
             subtitle_path=subtitle_path,
