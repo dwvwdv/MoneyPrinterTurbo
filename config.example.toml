@@ -636,6 +636,13 @@ subtitle_provider = "edge"
 # 4, 6 or 8: the code caps values at 8, and the WebUI resets anything else to 1.
 # video_clip_concurrency = 1
 
+# Which engine renders the combined and final videos. Default: "moviepy".
+# "ffmpeg" renders each step as one FFmpeg filter graph with a single encode,
+# which is much faster for long videos. Options it cannot draw yet (slide, zoom
+# and shuffle transitions, the spring subtitle animation) are rendered with
+# MoviePy instead; that choice is made before a step starts rendering.
+# render_backend = "moviepy"
+
 # Leave unset to follow the app default (libx264). Hardware encoders are optional;
 # unsupported encoders automatically fall back to libx264.
 # Available values: "libx264", "h264_nvenc", "h264_amf", "h264_qsv",
