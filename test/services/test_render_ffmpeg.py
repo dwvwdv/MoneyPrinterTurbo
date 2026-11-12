@@ -210,3 +210,27 @@ class TestOverlappingSubtitles(unittest.TestCase):
         durations = [float(line.split()[1]) for line in lines if line.startswith("duration ")]
         self.assertEqual(files[:3], ["cue-00000.png", "overlap-00000.png", "cue-00000.png"])
         self.assertEqual(durations[:3], [1.0, 1.0, 3.0])
+
+
+@unittest.skipUnless(HAS_FFMPEG, "ffmpeg is not installed")
+class TestTimeout(unittest.TestCase):
+    def test_stalled_ffmpeg_is_killed_and_raises_timeout(self):
+        # A source that never ends stands in for a hung encoder.
+        command = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+                   "-progress", "pipe:1", "-re", "-f", "lavfi", "-i", "testsrc2=s=64x64",
+                   "-f", "null", "-"]
+        with self.assertRaises(TimeoutError):
+            render_ffmpeg._run_ffmpeg(command, description="stall", timeout_seconds=1)
+
+    def test_timeout_is_not_retried_with_another_codec(self):
+        calls = []
+
+        def run(command, **kwargs):
+            calls.append(command)
+            raise TimeoutError("stalled")
+
+        with patch.object(render_ffmpeg, "_run_ffmpeg", side_effect=run), \
+                patch.object(render_ffmpeg.video, "_get_effective_video_codec", return_value="h264_nvenc"):
+            with self.assertRaises(TimeoutError):
+                render_ffmpeg._encode_with_codec_fallback(lambda codec: [codec], description="x")
+        self.assertEqual(calls, [["h264_nvenc"]])

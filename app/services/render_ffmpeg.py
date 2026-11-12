@@ -76,6 +76,20 @@ def _get_combine_chunk_size() -> int:
     return max(1, min(64, size))
 
 
+def _get_combine_timeout_seconds() -> float:
+    """The combine step honours ``ffmpeg_concat_timeout_seconds`` like the MoviePy concat."""
+    configured = config.app.get(
+        "ffmpeg_concat_timeout_seconds", video._DEFAULT_FFMPEG_CONCAT_TIMEOUT_SECONDS
+    )
+    try:
+        timeout_seconds = float(configured)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("ffmpeg_concat_timeout_seconds must be positive") from exc
+    if isinstance(configured, bool) or not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError("ffmpeg_concat_timeout_seconds must be positive")
+    return timeout_seconds
+
+
 class UnsupportedRenderOption(Exception):
     """Raised before rendering starts when FFmpeg cannot reproduce an option."""
 
@@ -163,8 +177,13 @@ def _run_ffmpeg(
     description: str,
     total_seconds: float | None = None,
     progress: Callable[[float], None] | None = None,
+    timeout_seconds: float | None = None,
 ) -> None:
-    """Run FFmpeg, forward ``-progress`` output as seconds rendered, and raise on failure."""
+    """Run FFmpeg, forward ``-progress`` output as seconds rendered, and raise on failure.
+
+    With ``timeout_seconds`` a stalled FFmpeg is killed and reaped, and
+    ``TimeoutError`` is raised; callers must not retry it with another codec.
+    """
     with tempfile.TemporaryFile(mode="w+b") as stderr_file:
         process = subprocess.Popen(
             command,
@@ -187,6 +206,17 @@ def _run_ffmpeg(
             target=logging_utils.bind_log_scope(log_heartbeat), daemon=True
         )
         reporter.start()
+        timed_out = threading.Event()
+
+        def kill_on_timeout() -> None:
+            timed_out.set()
+            process.kill()
+
+        watchdog = None
+        if timeout_seconds is not None:
+            watchdog = threading.Timer(timeout_seconds, kill_on_timeout)
+            watchdog.daemon = True
+            watchdog.start()
         try:
             assert process.stdout is not None
             for raw_line in process.stdout:
@@ -208,8 +238,12 @@ def _run_ffmpeg(
             process.wait()
             raise
         finally:
+            if watchdog is not None:
+                watchdog.cancel()
             stop_event.set()
             reporter.join(timeout=1)
+        if timed_out.is_set():
+            raise TimeoutError(f"{description} exceeded {timeout_seconds:g} seconds")
         if returncode != 0:
             stderr_file.seek(0)
             message = stderr_file.read().decode("utf-8", "replace").strip()
@@ -222,6 +256,9 @@ def _encode_with_codec_fallback(build_command: Callable[[str], list[str]], **run
     try:
         _run_ffmpeg(build_command(effective_codec), **run_kwargs)
         return effective_codec
+    except TimeoutError:
+        # A hung encoder is not evidence that another codec will work.
+        raise
     except Exception as exc:
         if effective_codec == video._DEFAULT_VIDEO_CODEC:
             raise
@@ -448,6 +485,7 @@ def combine_videos(
     # in memory. Chunks of a few slices keep memory flat. Every chunk is
     # encoded once with identical settings and joined without re-encoding.
     chunk_size = _get_combine_chunk_size()
+    timeout_seconds = _get_combine_timeout_seconds()
     chunks = [timeline[i:i + chunk_size] for i in range(0, len(timeline), chunk_size)]
     output_dir = os.path.dirname(os.path.abspath(combined_video_path))
     work_dir = tempfile.mkdtemp(prefix=".ffmpeg-combine-", dir=output_dir)
@@ -500,9 +538,12 @@ def combine_videos(
                 description=f"ffmpeg combine chunk {chunk_index + 1}/{len(chunks)}",
                 total_seconds=chunk_length,
                 progress=report,
+                timeout_seconds=timeout_seconds,
             )
             try:
                 _run_ffmpeg(build_command(codec), **run_kwargs)
+            except TimeoutError:
+                raise
             except Exception as exc:
                 # Same codec rule as MoviePy: a hardware encoder that fails is
                 # replaced by libx264. Only the first chunk can switch, because
@@ -531,6 +572,7 @@ def combine_videos(
                 staged,
             ],
             description="ffmpeg join chunks",
+            timeout_seconds=timeout_seconds,
         )
         _publish(staged, combined_video_path)
     finally:
