@@ -62,6 +62,7 @@ _SUPPORTED_TRANSITIONS = {
 }
 _SPRING_ANIMATIONS = ("pop_spring", "spring", "pop")
 _BGM_FADE_OUT_SECONDS = 3.0
+_MOVIEPY_AUDIO_FPS = 44100
 
 
 _DEFAULT_COMBINE_CHUNK_SIZE = 6
@@ -150,16 +151,6 @@ def _video_geometry(info: dict) -> tuple[int, int, float]:
         duration = _media_duration(info, "video")
         return width, height, duration
     raise ValueError("no video stream")
-
-
-def _audio_sample_rate(info: dict) -> int:
-    for stream in info.get("streams", []):
-        if stream.get("codec_type") == "audio":
-            try:
-                return int(stream.get("sample_rate") or 0)
-            except (TypeError, ValueError):
-                return 0
-    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -656,8 +647,9 @@ def generate_video(
     video_width, video_height = VideoAspect(params.video_aspect).to_resolution()
     logger.info(f"generating video with ffmpeg: {video_width} x {video_height}")
     video_duration = _media_duration(_probe(video_path), "video")
-    voice_info = _probe(audio_path)
-    sample_rate = _audio_sample_rate(voice_info) or 44100
+    # MoviePy's AudioFileClip reads every file at 44.1 kHz, so its final
+    # videos are always 44.1 kHz whatever the narration or BGM rate.
+    sample_rate = _MOVIEPY_AUDIO_FPS
 
     bgm_enabled = bgm_service.should_use_bgm(params.bgm_type, params.bgm_volume)
     bgm_file = ""
@@ -673,11 +665,9 @@ def generate_video(
         # Same contract as MoviePy: a BGM that cannot be read degrades to a
         # narration-only video and reports False. It is checked before encoding.
         try:
-            bgm_info = _probe(bgm_file)
-            bgm_duration = _media_duration(bgm_info, "audio")
+            bgm_duration = _media_duration(_probe(bgm_file), "audio")
             if bgm_duration <= 0:
                 raise ValueError("background music has no audio")
-            sample_rate = max(sample_rate, _audio_sample_rate(bgm_info))
         except Exception:
             bgm_mix_succeeded = False
             logger.exception(

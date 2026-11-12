@@ -1,0 +1,59 @@
+{
+  "backend": "moviepy",
+  "minutes": 14.0,
+  "materials": 48,
+  "params": {
+    "aspect": "9:16",
+    "n_threads": 2,
+    "transition": null,
+    "subtitles": true,
+    "bgm": true,
+    "video_clip_concurrency": 1
+  },
+  "machine": {
+    "cpus": 4,
+    "platform": "Linux-6.18.44-fc-v378-x86_64-with-glibc2.39",
+    "python": "3.13.18",
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+  },
+  "timings": {
+    "clip_processing_s": 4201.7,
+    "concat_s": 943.4,
+    "combine_s": 5145.5,
+    "total_s": 6586.8,
+    "final_encode_s": 1441.3
+  },
+  "memory": {
+    "python_peak_rss_mb": 689.0,
+    "ffmpeg_peak_rss_mb": 995.0
+  },
+  "contracts": {
+    "progress_calls": 169,
+    "progress_first": [
+      [
+        24.29,
+        0.006
+      ]
+    ],
+    "progress_last": [
+      [
+        4201.71,
+        1.0
+      ]
+    ],
+    "used_video_paths": 169,
+    "bgm_mix_succeeded": true
+  },
+  "combined": {
+    "duration_s": 840.067,
+    "size_mb": 545.83,
+    "video": "h264 1080x1920",
+    "audio": null
+  },
+  "final": {
+    "duration_s": 840.07,
+    "size_mb": 546.76,
+    "video": "h264 1080x1920",
+    "audio": "aac 44100Hz"
+  }
+}

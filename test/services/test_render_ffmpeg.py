@@ -179,6 +179,13 @@ class TestRenderWithFFmpeg(unittest.TestCase):
         ok = render_ffmpeg.generate_video(combined, self.audio, srt, final, params, bgm_file_override=bgm)
         self.assertIs(ok, True)
         self.assertAlmostEqual(_duration(final), _duration(combined), delta=0.1)
+        # MoviePy reads audio at 44.1 kHz, so its final videos are 44.1 kHz.
+        sample_rate = subprocess.run(
+            ["ffprobe", "-v", "error", "-select_streams", "a:0", "-show_entries",
+             "stream=sample_rate", "-of", "default=nw=1:nk=1", final],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        self.assertEqual(sample_rate, "44100")
 
 
 if __name__ == "__main__":
