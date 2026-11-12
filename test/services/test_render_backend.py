@@ -1,5 +1,6 @@
 """The render backend seam must keep the MoviePy rendering contract unchanged."""
 
+import inspect
 import os
 import tempfile
 import unittest
@@ -27,6 +28,26 @@ class TestMoviePyBackend(unittest.TestCase):
 
         with self.assertRaises(TypeError):
             CombineOnly()
+
+    def test_signatures_match_the_video_functions(self):
+        def parameters(function):
+            return [
+                (parameter.name, parameter.kind, parameter.default)
+                for parameter in inspect.signature(function).parameters.values()
+                if parameter.name != "self"
+            ]
+
+        for method in ("combine_videos", "generate_video"):
+            with self.subTest(method=method):
+                expected = parameters(getattr(render_backend.video, method))
+                self.assertEqual(
+                    parameters(getattr(render_backend.BaseRenderBackend, method)),
+                    expected,
+                )
+                self.assertEqual(
+                    parameters(getattr(render_backend.MoviePyBackend, method)),
+                    expected,
+                )
 
     def test_combine_videos_forwards_every_argument_and_the_result(self):
         backend = render_backend.MoviePyBackend()
@@ -87,8 +108,11 @@ class _RecordingBackend(render_backend.BaseRenderBackend):
 
     def combine_videos(self, **kwargs):
         self.calls.append(("combine", kwargs))
-        kwargs["used_video_paths"].append(kwargs["video_paths"][0])
-        kwargs["progress_callback"](0.5)
+        # Batch allocation arguments are only passed for batches.
+        if kwargs.get("used_video_paths") is not None:
+            kwargs["used_video_paths"].append(kwargs["video_paths"][0])
+        if kwargs.get("progress_callback") is not None:
+            kwargs["progress_callback"](0.5)
         return kwargs["combined_video_path"]
 
     def generate_video(self, **kwargs):
@@ -151,6 +175,34 @@ class TestGenerateFinalVideosUsesBackend(unittest.TestCase):
             if "progress" in call.kwargs
         ]
         self.assertIn(56.25, progress_values)
+
+    def test_single_video_omits_batch_arguments(self):
+        backend = _RecordingBackend()
+        params = VideoParams(
+            video_subject="test", video_count=1, video_source="local",
+            bgm_type="", match_materials_to_script=False,
+        )
+
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(tm.render_backend, "get_render_backend", return_value=backend),
+            patch.object(tm.utils, "task_dir", return_value=directory),
+            patch.object(tm.sm.state, "update_task"),
+        ):
+            final_paths, _, warnings = tm.generate_final_videos(
+                task_id="single-backend-task",
+                params=params,
+                downloaded_videos=["material.mp4"],
+                audio_file="audio.mp3",
+                subtitle_path="",
+                audio_duration=5,
+            )
+
+        self.assertEqual(final_paths, [os.path.join(directory, "final-1.mp4")])
+        self.assertEqual(warnings, [])
+        combine_kwargs = backend.calls[0][1]
+        for name in ("source_usage", "source_groups", "used_video_paths"):
+            self.assertIsNone(combine_kwargs.get(name))
 
 
 if __name__ == "__main__":

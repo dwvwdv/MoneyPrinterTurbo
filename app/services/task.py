@@ -1156,8 +1156,8 @@ def generate_final_videos(
             and bgm_file_override
             and not bgm_mix_succeeded
         ):
-            # 第三方已成功返回并通过 FFmpeg 校验，但 MoviePy 最终混音仍可能
-            # 因运行环境失败。视频服务会保留无 BGM 成片；API 生成失败时
+            # 第三方已成功返回并通过 FFmpeg 校验，但渲染 backend 的最终混音仍
+            # 可能因运行环境失败。backend 会保留无 BGM 成片；API 生成失败时
             # override 为空，因此不会重复追加警告。
             warnings.append(
                 {
