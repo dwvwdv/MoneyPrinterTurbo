@@ -1,4 +1,4 @@
-"""The render backend seam must keep the local rendering contract unchanged."""
+"""The render backend seam must keep the MoviePy rendering contract unchanged."""
 
 import os
 import tempfile
@@ -10,16 +10,16 @@ from app.services import render_backend
 from app.services import task as tm
 
 
-class TestLocalMoviePyBackend(unittest.TestCase):
-    def test_default_backend_is_local_and_satisfies_the_protocol(self):
+class TestMoviePyBackend(unittest.TestCase):
+    def test_default_backend_is_moviepy_and_satisfies_the_protocol(self):
         backend = render_backend.get_render_backend()
 
-        self.assertIsInstance(backend, render_backend.LocalMoviePyBackend)
+        self.assertIsInstance(backend, render_backend.MoviePyBackend)
         self.assertIsInstance(backend, render_backend.RenderBackend)
-        self.assertEqual(backend.name, "local")
+        self.assertEqual(backend.name, "moviepy")
 
     def test_combine_videos_forwards_every_argument_and_the_result(self):
-        backend = render_backend.LocalMoviePyBackend()
+        backend = render_backend.MoviePyBackend()
         used_video_paths = []
         source_usage = {"a.mp4": 1}
 
@@ -49,7 +49,7 @@ class TestLocalMoviePyBackend(unittest.TestCase):
         self.assertEqual(kwargs["clip_speed"], 1.5)
 
     def test_generate_video_returns_the_bgm_result_unchanged(self):
-        backend = render_backend.LocalMoviePyBackend()
+        backend = render_backend.MoviePyBackend()
         params = VideoParams(video_subject="test")
 
         for bgm_result in (True, False):
@@ -97,8 +97,8 @@ class TestGenerateFinalVideosUsesBackend(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             patch.object(tm.render_backend, "get_render_backend", return_value=backend),
-            patch.object(tm.video, "combine_videos") as local_combine,
-            patch.object(tm.video, "generate_video") as local_generate,
+            patch.object(tm.video, "combine_videos") as moviepy_combine,
+            patch.object(tm.video, "generate_video") as moviepy_generate,
             patch.object(tm.utils, "task_dir", return_value=directory),
             patch.object(tm.task_artifacts, "patch_script_data") as patch_script_data,
             patch.object(tm.sm.state, "update_task") as update_task,
@@ -112,8 +112,8 @@ class TestGenerateFinalVideosUsesBackend(unittest.TestCase):
                 audio_duration=5,
             )
 
-        local_combine.assert_not_called()
-        local_generate.assert_not_called()
+        moviepy_combine.assert_not_called()
+        moviepy_generate.assert_not_called()
         self.assertEqual(
             [stage for stage, _ in backend.calls],
             ["combine", "generate", "combine", "generate"],

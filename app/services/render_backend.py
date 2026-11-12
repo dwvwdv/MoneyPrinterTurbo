@@ -22,9 +22,11 @@ functions in ``app.services.video``:
   when no BGM was requested or it mixed successfully, ``False`` when BGM was
   requested but failed and a narration-only video was written instead.
 
-Only the local MoviePy backend exists today, and it is always used, so
-behavior is unchanged. Discovering and selecting other backends is left to a
-later change.
+A backend is named after its rendering engine, not where it runs: an FFmpeg
+backend would also render on this machine, and a remote worker could run
+either engine. Only the MoviePy backend exists today, and it is always used,
+so behavior is unchanged. Discovering and selecting other backends is left to
+a later change.
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ from app.models.schema import (
     VideoTransitionMode,
 )
 from app.services import video
+
+DEFAULT_RENDER_BACKEND = "moviepy"
 
 
 @runtime_checkable
@@ -76,10 +80,10 @@ class RenderBackend(Protocol):
     ) -> bool: ...
 
 
-class LocalMoviePyBackend:
-    """The existing in-process MoviePy/FFmpeg renderer."""
+class MoviePyBackend:
+    """The existing in-process MoviePy renderer."""
 
-    name = "local"
+    name = DEFAULT_RENDER_BACKEND
 
     # Look the functions up on the module at call time, so patches of
     # ``video.combine_videos`` / ``video.generate_video`` still apply.
@@ -90,9 +94,9 @@ class LocalMoviePyBackend:
         return video.generate_video(*args, **kwargs)
 
 
-_LOCAL_BACKEND = LocalMoviePyBackend()
+_DEFAULT_BACKEND = MoviePyBackend()
 
 
 def get_render_backend() -> RenderBackend:
-    """Return the backend that renders task videos (currently always local)."""
-    return _LOCAL_BACKEND
+    """Return the backend that renders task videos (currently always MoviePy)."""
+    return _DEFAULT_BACKEND
